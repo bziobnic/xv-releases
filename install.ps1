@@ -1,0 +1,316 @@
+#!/usr/bin/env pwsh
+
+# crosstache (xv) installer for Windows
+# https://github.com/bziobnic/xv-releases
+
+[CmdletBinding()]
+param(
+    [string]$Version = "latest",
+    [string]$InstallDir = "$env:LOCALAPPDATA\Programs\crosstache",
+    [switch]$Help
+)
+
+# Configuration
+$GitHubRepo = "bziobnic/xv-releases"
+$BinaryName = "xv.exe"
+$ErrorActionPreference = 'Stop'
+
+# Show help
+if ($Help) {
+    Write-Host @"
+crosstache Installer for Windows
+
+Usage: .\install.ps1 [OPTIONS]
+
+Options:
+    -Version <string>     Specific version to install (default: latest)
+    -InstallDir <string>  Installation directory (default: $env:LOCALAPPDATA\Programs\crosstache)
+    -Help                 Show this help message
+
+Examples:
+    .\install.ps1                    # Install latest version
+    .\install.ps1 -Version v0.1.0    # Install specific version
+    
+Installation via one-liner:
+    iwr -useb https://raw.githubusercontent.com/$GitHubRepo/main/install.ps1 | iex
+"@
+    exit 0
+}
+
+# Print functions with colors
+function Write-Info {
+    param([string]$Message)
+    Write-Host "[INFO] $Message" -ForegroundColor Blue
+}
+
+function Write-Success {
+    param([string]$Message)
+    Write-Host "[SUCCESS] $Message" -ForegroundColor Green
+}
+
+function Write-Warning {
+    param([string]$Message)
+    Write-Host "[WARNING] $Message" -ForegroundColor Yellow
+}
+
+function Write-Error {
+    param([string]$Message)
+    Write-Host "[ERROR] $Message" -ForegroundColor Red
+    exit 1
+}
+
+# Get latest version from GitHub API
+function Get-LatestVersion {
+    try {
+        $apiUrl = "https://api.github.com/repos/$GitHubRepo/releases/latest"
+        $response = Invoke-RestMethod -Uri $apiUrl -Method Get
+        return $response.tag_name
+    }
+    catch {
+        Write-Error "Failed to fetch latest version: $_"
+    }
+}
+
+# Download and verify file
+function Download-File {
+    param(
+        [string]$Url,
+        [string]$OutFile,
+        [string]$Description
+    )
+    
+    try {
+        Write-Info "Downloading $Description..."
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
+        $ProgressPreference = 'Continue'
+        
+        if (-not (Test-Path $OutFile)) {
+            Write-Error "Failed to download $Description"
+        }
+    }
+    catch {
+        Write-Error "Download failed: $_"
+    }
+}
+
+# Verify checksum
+function Test-Checksum {
+    param(
+        [string]$FilePath,
+        [string]$ChecksumPath
+    )
+    
+    # Verification is mandatory: installing an unverified archive is never
+    # acceptable, so every failure path below aborts the installation.
+    if (-not (Test-Path $ChecksumPath)) {
+        Write-Error "Checksum file not found. Refusing to install without verification."
+    }
+
+    try {
+        Write-Info "Verifying checksum..."
+
+        # Check if checksum file has content
+        if ((Get-Item $ChecksumPath).Length -eq 0) {
+            Write-Error "Checksum file is empty. Refusing to install without verification."
+        }
+
+        $expectedHash = (Get-Content $ChecksumPath -Raw).Trim() -replace '\r?\n.*', '' -replace '\s.*', ''
+
+        if ([string]::IsNullOrWhiteSpace($expectedHash)) {
+            Write-Error "Could not read valid checksum from file. Refusing to install without verification."
+        }
+
+        $actualHash = (Get-FileHash -Path $FilePath -Algorithm SHA256).Hash.ToLower()
+        $expectedHash = $expectedHash.ToLower()
+
+        if ($expectedHash -ne $actualHash) {
+            Write-Error "Checksum verification failed. Expected: $expectedHash, Got: $actualHash"
+        }
+        else {
+            Write-Info "Checksum verification passed"
+        }
+    }
+    catch {
+        Write-Error "Checksum verification failed: $($_.Exception.Message)"
+    }
+}
+
+# Add directory to PATH
+function Add-ToPath {
+    param([string]$Directory)
+    
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    
+    if ($userPath -notlike "*$Directory*") {
+        Write-Info "Adding crosstache to your PATH..."
+        $newPath = if ($userPath) { "$userPath;$Directory" } else { $Directory }
+        [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+        $env:Path = "$env:Path;$Directory"
+        Write-Success "Added to PATH. You may need to restart your terminal."
+    }
+    else {
+        Write-Info "Installation directory already in PATH"
+    }
+}
+
+# Verify installation
+function Test-Installation {
+    param([string]$BinaryPath)
+    
+    if (-not (Test-Path $BinaryPath)) {
+        Write-Error "Binary not found at $BinaryPath"
+    }
+    
+    try {
+        Write-Info "Verifying installation..."
+        $versionOutput = & $BinaryPath --version 2>$null
+        
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "crosstache installed successfully!"
+            Write-Info "Installed version: $versionOutput"
+            Write-Info "Binary location: $BinaryPath"
+            Write-Info "You can now use 'xv' from any terminal."
+        }
+        else {
+            Write-Warning "Binary installed but version check failed."
+            Write-Info "You can try running: $BinaryPath --help"
+        }
+    }
+    catch {
+        Write-Warning "Installation verification failed: $_"
+        Write-Info "You can try running: $BinaryPath --help"
+    }
+}
+
+# Show usage information
+function Show-Usage {
+    Write-Host ""
+    Write-Info "Next step:"
+    Write-Host "  Run 'xv init' to choose a backend and configure its authentication." -ForegroundColor White
+    Write-Host ""
+    Write-Info "For more information:"
+    Write-Host "  xv --help" -ForegroundColor White
+    Write-Host "  https://github.com/$GitHubRepo" -ForegroundColor Cyan
+}
+
+# Main installation function
+function Install-crosstache {
+    Write-Info "crosstache Installer for Windows"
+    Write-Info "Repository: https://github.com/$GitHubRepo"
+    Write-Host ""
+    
+    # Determine version to install
+    if ($Version -eq "latest") {
+        $targetVersion = Get-LatestVersion
+        Write-Info "Latest version: $targetVersion"
+    }
+    else {
+        $targetVersion = $Version
+    }
+    
+    # Clean version string
+    $versionClean = $targetVersion -replace '^v', ''
+    
+    # Construct download URLs
+    $archiveName = "xv-windows-x64.zip"
+    $downloadUrl = "https://github.com/$GitHubRepo/releases/download/$targetVersion/$archiveName"
+    $checksumUrl = "https://github.com/$GitHubRepo/releases/download/$targetVersion/$archiveName.sha256"
+    $signatureUrl = "https://github.com/$GitHubRepo/releases/download/$targetVersion/$archiveName.minisig"
+    
+    Write-Info "Installing crosstache $targetVersion for Windows x64"
+    Write-Info "Download URL: $downloadUrl"
+    
+    # Create temporary directory
+    $tempDir = New-TemporaryFile | ForEach-Object { Remove-Item $_; New-Item -ItemType Directory -Path $_ }
+    $archivePath = Join-Path $tempDir $archiveName
+    $checksumPath = Join-Path $tempDir "$archiveName.sha256"
+    $signaturePath = Join-Path $tempDir "$archiveName.minisig"
+    
+    try {
+        # Download files
+        Download-File -Url $downloadUrl -OutFile $archivePath -Description $archiveName
+        
+        try {
+            Download-File -Url $checksumUrl -OutFile $checksumPath -Description "checksum"
+            Download-File -Url $signatureUrl -OutFile $signaturePath -Description "signature"
+        }
+        catch {
+            Write-Error "Could not download release verification metadata: $_. Refusing to install without verification."
+        }
+        Test-Checksum -FilePath $archivePath -ChecksumPath $checksumPath
+
+        $minisign = Get-Command minisign -ErrorAction SilentlyContinue
+        if (-not $minisign) {
+            throw "minisign is required to authenticate releases. Install it with 'winget install jedisct1.minisign' (or 'scoop install minisign' / 'choco install minisign') and retry."
+        }
+        $releaseSigningKey = "RWRuXFh34rB613dgsXyAMmtKvYK0SFwxq4i44dhGFXVTrhAQ7hJXf6Ym"
+        & $minisign.Source -Vm $archivePath -x $signaturePath -P $releaseSigningKey | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Release signature verification failed. Refusing to install."
+        }
+        $trustedComment = Get-Content $signaturePath | Where-Object { $_ -like 'trusted comment: *' } | Select-Object -First 1
+        if ($trustedComment -ne "trusted comment: crosstache $targetVersion") {
+            throw "Release signature belongs to '$trustedComment', not 'crosstache $targetVersion'. Refusing a replayed archive."
+        }
+        Write-Info "Release signature verified"
+        
+        # Create installation directory
+        if (-not (Test-Path $InstallDir)) {
+            Write-Info "Creating installation directory: $InstallDir"
+            New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+        }
+        
+        # Extract archive
+        Write-Info "Extracting archive..."
+        Expand-Archive -Path $archivePath -DestinationPath $tempDir -Force
+        
+        # Find and copy binary
+        $extractedBinary = Get-ChildItem -Path $tempDir -Name $BinaryName -Recurse | Select-Object -First 1
+        if (-not $extractedBinary) {
+            Write-Error "Binary '$BinaryName' not found in archive"
+        }
+        
+        $sourceBinary = Join-Path $tempDir $extractedBinary
+        $targetBinary = Join-Path $InstallDir $BinaryName
+        
+        Write-Info "Installing binary to $targetBinary"
+        Copy-Item -Path $sourceBinary -Destination $targetBinary -Force
+        
+        # Add to PATH
+        Add-ToPath -Directory $InstallDir
+        
+        # Verify installation
+        Test-Installation -BinaryPath $targetBinary
+        
+        # Show usage
+        Show-Usage
+        
+        Write-Success "Installation completed successfully!"
+    }
+    finally {
+        # Cleanup
+        if (Test-Path $tempDir) {
+            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+# Check PowerShell version
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Error "PowerShell 5.0 or higher is required"
+}
+
+# Check if running as administrator (optional warning)
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
+if ($isAdmin) {
+    Write-Warning "Running as administrator. Consider running as a regular user for user-local installation."
+}
+
+# Run installation
+try {
+    Install-crosstache
+}
+catch {
+    Write-Error "Installation failed: $_"
+}
