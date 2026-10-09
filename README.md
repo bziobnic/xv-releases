@@ -35,5 +35,5 @@ Every release carries `xv-linux-x64.tar.gz`, `xv-macos-intel.tar.gz`,
 
 ```yaml
 - uses: bziobnic/xv-releases@v1
-  with: { version: v0.45.0, backend: azure, vault: myproj-prod-kv }
+  with: { version: v0.46.0, backend: azure, vault: myproj-prod-kv }
 ```
