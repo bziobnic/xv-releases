@@ -96,12 +96,22 @@ runs:
         # ── Resolve the platform to a published archive name ───────────────
         case "${RUNNER_OS}:${RUNNER_ARCH}" in
           Linux:X64)    ARCHIVE="xv-linux-x64.tar.gz" ;;
-          macOS:X64)    ARCHIVE="xv-macos-intel.tar.gz" ;;
+          # Intel macOS builds stopped after v0.47.x; checked once the version
+          # is resolved below.
+          # A runner process under Rosetta on Apple Silicon reports X64; the
+          # hardware answer picks the native build there.
+          macOS:X64)
+            if [[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" == "1" ]]; then
+              ARCHIVE="xv-macos-apple-silicon.tar.gz"
+            else
+              ARCHIVE="xv-macos-intel.tar.gz"
+            fi
+            ;;
           macOS:ARM64)  ARCHIVE="xv-macos-apple-silicon.tar.gz" ;;
           Windows:X64)  ARCHIVE="xv-windows-x64.zip" ;;
           *)
             echo "::error::crosstache publishes no release binary for ${RUNNER_OS}/${RUNNER_ARCH}." >&2
-            echo "Supported: Linux/X64, macOS/X64, macOS/ARM64, Windows/X64. Build from source with cargo for other targets." >&2
+            echo "Supported: Linux/X64, macOS/ARM64, Windows/X64 (macOS/X64 up to v0.47.0). Build from source with cargo for other targets." >&2
             exit 1
             ;;
         esac
@@ -119,6 +129,12 @@ runs:
           fi
         else
           VERSION="${INPUT_VERSION}"
+        fi
+        if [[ "${ARCHIVE}" == "xv-macos-intel.tar.gz" ]]; then
+          if [[ ! "${VERSION}" =~ ^v?0\.([0-9]+)\. ]] || (( BASH_REMATCH[1] > 47 )); then
+            echo "::error::crosstache ${VERSION} has no Intel macOS build; v0.47.0 is the last. Pin version: v0.47.0 or use an Apple Silicon runner." >&2
+            exit 1
+          fi
         fi
         echo "Installing crosstache ${VERSION} (${ARCHIVE})"
 
