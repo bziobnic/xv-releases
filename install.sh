@@ -53,6 +53,11 @@ detect_platform() {
             esac
             ;;
         darwin*)
+            # A shell running under Rosetta on Apple Silicon reports x86_64;
+            # the hardware answer picks the native build there.
+            if [ "$arch" = "x86_64" ] && [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ]; then
+                arch=arm64
+            fi
             case "$arch" in
                 x86_64) echo "macos-intel" ;;
                 arm64) echo "macos-apple-silicon" ;;
@@ -104,6 +109,19 @@ download_and_install() {
     
     # Remove 'v' prefix if present
     version_clean=${version#v}
+
+    # Intel macOS builds stopped after v0.47.x; older releases still carry one.
+    if [ "$platform" = "macos-intel" ]; then
+        major=${version_clean%%.*}
+        minor=${version_clean#*.}
+        minor=${minor%%.*}
+        case "$major$minor" in
+            ''|*[!0-9]*) error "Unrecognized version: $version" ;;
+        esac
+        if [ "$major" -gt 0 ] || [ "$minor" -gt 47 ]; then
+            error "crosstache no longer publishes Intel macOS builds; v0.47.0 is the last. Install it with: curl -sSL https://raw.githubusercontent.com/$GITHUB_REPO/main/install.sh | bash -s v0.47.0"
+        fi
+    fi
     
     if [ "$platform" = "windows-x64" ]; then
         archive_name="xv-${platform}.zip"
