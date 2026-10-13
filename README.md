@@ -24,9 +24,11 @@ repository and will fail; reinstall once with the install script above, and
 
 ## Manual download and verification
 
-Every release carries `xv-linux-x64.tar.gz`, `xv-macos-intel.tar.gz`,
+Every release carries `xv-linux-x64.tar.gz`,
 `xv-macos-apple-silicon.tar.gz` and `xv-windows-x64.zip`, each with a
-`.sha256` checksum and a `.minisig` signature. Verify with
+`.sha256` checksum and a `.minisig` signature. Releases up to v0.47.0 also
+carry `xv-macos-intel.tar.gz`, the last Intel macOS build; on an Intel Mac,
+install it with `curl -sSL https://raw.githubusercontent.com/bziobnic/xv-releases/main/install.sh | bash -s v0.47.0`. Verify with
 [minisign](https://jedisct1.github.io/minisign/):
 
     minisign -Vm xv-linux-x64.tar.gz -P RWRuXFh34rB613dgsXyAMmtKvYK0SFwxq4i44dhGFXVTrhAQ7hJXf6Ym
@@ -35,5 +37,5 @@ Every release carries `xv-linux-x64.tar.gz`, `xv-macos-intel.tar.gz`,
 
 ```yaml
 - uses: bziobnic/xv-releases@v1
-  with: { version: v0.47.0, backend: azure, vault: myproj-prod-kv }
+  with: { version: v0.48.0, backend: azure, vault: myproj-prod-kv }
 ```
