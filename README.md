@@ -37,5 +37,5 @@ install it with `curl -sSL https://raw.githubusercontent.com/bziobnic/xv-release
 
 ```yaml
 - uses: bziobnic/xv-releases@v1
-  with: { version: v0.50.0, backend: azure, vault: myproj-prod-kv }
+  with: { version: v0.51.0, backend: azure, vault: myproj-prod-kv }
 ```
